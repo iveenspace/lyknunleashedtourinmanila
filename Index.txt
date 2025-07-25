@@ -76,13 +76,9 @@
             z-index: 20;
         }
         
-        .lykn-group-image {
-            margin: 0 auto;
-            max-width: 100%;
-            height: auto;
-            border-radius: 4px;
-            overflow: hidden;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+        <div class="lykn-group-image">
+          <img src="5ae8328b-423a-4290-afe6-f6b9c74370c6_TABLET_LANDSCAPE_LARGE_16_9.jpg" alt="LYKN Group" style="width: 100%; height: auto; display: block;">
+        </div>
         }
         
         .photostrip-header {
