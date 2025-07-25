@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LYKN Photostrip - Simple Version</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background-color: #1a1a1a;
+            color: #fff;
+        }
+        
+        .camera-container {
+            position: relative;
+            overflow: hidden;
+            border-radius: 8px;
+            background-color: #000;
+        }
+        
+        .photo-slot {
+            background-color: #222;
+            border: 2px dashed #444;
+            aspect-ratio: 3/4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        
+        .photo-slot img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .countdown {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 6rem;
+            color: white;
+            z-index: 10;
+            opacity: 0;
+        }
+        
+        .countdown.active {
+            opacity: 1;
+        }
+        
+        .flash {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: white;
+            opacity: 0;
+            z-index: 5;
+        }
+        
+        .error-message {
+            background-color: rgba(0,0,0,0.7);
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-bold mb-2">LYKN UNLEASHED TOUR</h1>
+            <p class="text-gray-400">Manila Photostrip</p>
+        </header>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Camera Section -->
+            <div>
+                <div class="camera-container aspect-video mb-4">
+                    <video id="video" class="w-full h-full object-cover" autoplay playsinline></video>
+                    <div id="cameraError" class="error-message absolute inset-0 flex items-center justify-center hidden">
+                        <div>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <p class="text-lg font-medium">Camera access required</p>
+                            <p class="text-sm text-gray-400 mt-1">Please allow camera access in your browser settings</p>
+                        </div>
+                    </div>
+                    <div class="countdown" id="countdown">3</div>
+                    <div class="flash" id="flash"></div>
+                </div>
+                
+                <div class="flex gap-3 justify-center">
+                    <button id="startBtn" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-md">
+                        Start Photobooth
+                    </button>
+                    <button id="resetBtn" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-md" disabled>
+                        Reset
+                    </button>
+                </div>
+                
+                <div id="statusMessage" class="mt-3 text-center text-sm text-gray-400"></div>
+            </div>
+            
+            <!-- Photostrip Section -->
+            <div>
+                <div class="bg-black p-4 rounded-md">
+                    <div class="text-center mb-3">
+                        <h2 class="text-xl font-bold">LYKN</h2>
+                        <p class="text-xs text-gray-400">UNLEASHED TOUR IN MANILA</p>
+                    </div>
+                    
+                    <div id="photoStripContainer" class="flex flex-col gap-3 mb-3">
+                        <!-- Photo slots will be generated here -->
+                    </div>
+                    
+                    <div class="text-center text-xs text-gray-500">
+                        <p>MEMORIES FROM THE CONCERT</p>
+                    </div>
+                </div>
+                
+                <div class="mt-4 text-center">
+                    <button id="downloadBtn" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-md" disabled>
+                        Download Photostrip
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <canvas id="canvas" class="hidden"></canvas>
+    <canvas id="photoStripCanvas" class="hidden"></canvas>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM elements
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const photoStripCanvas = document.getElementById('photoStripCanvas');
+            const photoStripContainer = document.getElementById('photoStripContainer');
+            const startBtn = document.getElementById('startBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const countdown = document.getElementById('countdown');
+            const flash = document.getElementById('flash');
+            const cameraError = document.getElementById('cameraError');
+            const statusMessage = document.getElementById('statusMessage');
+            
+            // Variables
+            let stream = null;
+            let photosTaken = 0;
+            let photoSlots = [];
+            let capturedPhotos = [];
+            let isCapturing = false;
+            const photoCount = 3;
+            
+            // Initialize camera with better error handling
+            async function initCamera() {
+                try {
+                    statusMessage.textContent = "Requesting camera access...";
+                    
+                    stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: true, 
+                        audio: false 
+                    });
+                    
+                    video.srcObject = stream;
+                    startBtn.disabled = false;
+                    statusMessage.textContent = "Camera ready! Click 'Start Photobooth' to begin.";
+                    cameraError.classList.add('hidden');
+                    
+                } catch (err) {
+                    console.error('Camera error:', err);
+                    cameraError.classList.remove('hidden');
+                    statusMessage.textContent = "Camera access denied or not available.";
+                    startBtn.disabled = true;
+                }
+            }
+            
+            // Create photo slots
+            function createPhotoSlots() {
+                photoStripContainer.innerHTML = '';
+                photoSlots = [];
+                capturedPhotos = [];
+                
+                for (let i = 0; i < photoCount; i++) {
+                    const slot = document.createElement('div');
+                    slot.className = 'photo-slot';
+                    slot.innerHTML = `<span class="text-gray-500">${i + 1}</span>`;
+                    photoStripContainer.appendChild(slot);
+                    photoSlots.push(slot);
+                }
+            }
+            
+            // Take a photo with error handling
+            function takePhoto() {
+                return new Promise((resolve, reject) => {
+                    try {
+                        // Flash effect
+                        flash.style.opacity = '0.8';
+                        setTimeout(() => {
+                            flash.style.opacity = '0';
+                        }, 200);
+                        
+                        // Set canvas dimensions
+                        canvas.width = video.videoWidth || 640;
+                        canvas.height = video.videoHeight || 480;
+                        
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        
+                        const imgData = canvas.toDataURL('image/jpeg');
+                        
+                        // Add to captured photos
+                        capturedPhotos.push(imgData);
+                        
+                        // Update photo slot
+                        const img = document.createElement('img');
+                        img.src = imgData;
+                        photoSlots[photosTaken].innerHTML = '';
+                        photoSlots[photosTaken].appendChild(img);
+                        
+                        photosTaken++;
+                        resolve();
+                    } catch (err) {
+                        console.error('Error taking photo:', err);
+                        statusMessage.textContent = "Error capturing photo. Please try again.";
+                        reject(err);
+                    }
+                });
+            }
+            
+            // Start countdown
+            function startCountdown(seconds) {
+                return new Promise((resolve) => {
+                    countdown.textContent = seconds;
+                    countdown.classList.add('active');
+                    
+                    const interval = setInterval(() => {
+                        seconds--;
+                        countdown.textContent = seconds;
+                        
+                        if (seconds <= 0) {
+                            clearInterval(interval);
+                            countdown.classList.remove('active');
+                            resolve();
+                        }
+                    }, 1000);
+                });
+            }
+            
+            // Start photobooth process
+            async function startPhotobooth() {
+                if (isCapturing) return;
+                
+                try {
+                    isCapturing = true;
+                    startBtn.disabled = true;
+                    statusMessage.textContent = "Starting photobooth...";
+                    
+                    createPhotoSlots();
+                    photosTaken = 0;
+                    
+                    for (let i = 0; i < photoCount; i++) {
+                        statusMessage.textContent = `Taking photo ${i+1} of ${photoCount}...`;
+                        await startCountdown(3);
+                        await takePhoto();
+                        
+                        if (i < photoCount - 1) {
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        }
+                    }
+                    
+                    resetBtn.disabled = false;
+                    downloadBtn.disabled = false;
+                    statusMessage.textContent = "All photos taken! You can download your photostrip.";
+                } catch (err) {
+                    console.error('Photobooth error:', err);
+                    statusMessage.textContent = "An error occurred. Please try again.";
+                } finally {
+                    isCapturing = false;
+                }
+            }
+            
+            // Reset photobooth
+            function resetPhotobooth() {
+                photosTaken = 0;
+                capturedPhotos = [];
+                createPhotoSlots();
+                
+                startBtn.disabled = false;
+                resetBtn.disabled = true;
+                downloadBtn.disabled = true;
+                statusMessage.textContent = "Reset complete. Ready to take new photos.";
+            }
+            
+            // Generate and download photostrip
+            function downloadPhotostrip() {
+                if (capturedPhotos.length === 0) {
+                    statusMessage.textContent = "No photos to download.";
+                    return;
+                }
+                
+                try {
+                    statusMessage.textContent = "Generating photostrip...";
+                    
+                    // Set canvas dimensions
+                    const stripWidth = 600;
+                    const photoHeight = 600;
+                    const padding = 10;
+                    const headerHeight = 80;
+                    const footerHeight = 40;
+                    
+                    photoStripCanvas.width = stripWidth;
+                    photoStripCanvas.height = (photoHeight * photoCount) + (padding * (photoCount - 1)) + headerHeight + footerHeight;
+                    
+                    const ctx = photoStripCanvas.getContext('2d');
+                    
+                    // Fill background
+                    ctx.fillStyle = '#000000';
+                    ctx.fillRect(0, 0, photoStripCanvas.width, photoStripCanvas.height);
+                    
+                    // Draw header
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 36px Montserrat, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('LYKN', stripWidth / 2, 40);
+                    
+                    ctx.font = 'bold 16px Montserrat, sans-serif';
+                    ctx.fillText('UNLEASHED TOUR IN MANILA', stripWidth / 2, 70);
+                    
+                    // Draw photos
+                    let yPos = headerHeight;
+                    
+                    const drawNextPhoto = (index) => {
+                        if (index >= capturedPhotos.length) {
+                            // All photos drawn, add footer and download
+                            ctx.fillStyle = '#aaaaaa';
+                            ctx.font = '14px Montserrat, sans-serif';
+                            ctx.fillText('MEMORIES FROM THE CONCERT', stripWidth / 2, photoStripCanvas.height - 20);
+                            
+                            // Create download link
+                            const link = document.createElement('a');
+                            link.download = 'lykn_photostrip.jpg';
+                            link.href = photoStripCanvas.toDataURL('image/jpeg', 0.8);
+                            link.click();
+                            
+                            statusMessage.textContent = "Photostrip downloaded!";
+                            return;
+                        }
+                        
+                        const img = new Image();
+                        img.onload = () => {
+                            // Draw photo
+                            ctx.fillStyle = '#222';
+                            ctx.fillRect(50, yPos, stripWidth - 100, photoHeight);
+                            
+                            // Calculate aspect ratio
+                            const aspectRatio = img.width / img.height;
+                            let drawWidth = stripWidth - 120;
+                            let drawHeight = drawWidth / aspectRatio;
+                            
+                            // If height is too tall, constrain by height
+                            if (drawHeight > photoHeight - 20) {
+                                drawHeight = photoHeight - 20;
+                                drawWidth = drawHeight * aspectRatio;
+                            }
+                            
+                            // Center the image
+                            const offsetX = 60 + (stripWidth - 120 - drawWidth) / 2;
+                            const offsetY = yPos + 10;
+                            
+                            ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+                            
+                            // Add border
+                            ctx.strokeStyle = '#444';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(offsetX - 2, offsetY - 2, drawWidth + 4, drawHeight + 4);
+                            
+                            yPos += photoHeight + padding;
+                            
+                            // Process next photo
+                            drawNextPhoto(index + 1);
+                        };
+                        
+                        img.onerror = () => {
+                            console.error('Error loading image:', index);
+                            statusMessage.textContent = "Error creating photostrip. Please try again.";
+                        };
+                        
+                        img.src = capturedPhotos[index];
+                    };
+                    
+                    // Start drawing photos
+                    drawNextPhoto(0);
+                    
+                } catch (err) {
+                    console.error('Download error:', err);
+                    statusMessage.textContent = "Error generating photostrip.";
+                }
+            }
+            
+            // Event listeners
+            startBtn.addEventListener('click', startPhotobooth);
+            resetBtn.addEventListener('click', resetPhotobooth);
+            downloadBtn.addEventListener('click', downloadPhotostrip);
+            
+            // Initialize
+            createPhotoSlots();
+            initCamera();
+            
+            // Check if getUserMedia is supported
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                cameraError.classList.remove('hidden');
+                statusMessage.textContent = "Camera not supported in this browser.";
+                startBtn.disabled = true;
+            }
+        });
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9649cbc1e2394ee0',t:'MTc1MzQyNjk5MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
