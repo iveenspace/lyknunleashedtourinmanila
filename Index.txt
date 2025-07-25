@@ -199,7 +199,7 @@
                                 <!-- Spotlight effect -->
                                 <ellipse cx="400" cy="140" rx="400" ry="140" fill="url(#spotlightGradient)" />
                                 
-                                <!-- LYKN Group Members - Styled after promotional image -->
+                                <img src="TABLET_LANDSCAPE_LARGE_16_9.jpg" alt="Tablet Landscape Image" style="width:100%; height:auto;">
                                 
                                 <!-- Member 1 - Left -->
                                 <g transform="translate(160, 140)">
