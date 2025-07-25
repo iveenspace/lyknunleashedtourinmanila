@@ -69,6 +69,13 @@
             border-radius: 8px;
             text-align: center;
         }
+        
+        .camera-controls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            z-index: 20;
+        }
     </style>
 </head>
 <body class="p-4">
@@ -81,7 +88,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- Camera Section -->
             <div>
-                <div class="camera-container aspect-video mb-4">
+                <div class="camera-container aspect-video mb-4 relative">
                     <video id="video" class="w-full h-full object-cover" autoplay playsinline></video>
                     <div id="cameraError" class="error-message absolute inset-0 flex items-center justify-center hidden">
                         <div>
@@ -91,6 +98,13 @@
                             <p class="text-lg font-medium">Camera access required</p>
                             <p class="text-sm text-gray-400 mt-1">Please allow camera access in your browser settings</p>
                         </div>
+                    </div>
+                    <div class="camera-controls">
+                        <button id="switchCameraBtn" class="bg-black bg-opacity-50 hover:bg-opacity-70 text-white p-2 rounded-full">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
                     </div>
                     <div class="countdown" id="countdown">3</div>
                     <div class="flash" id="flash"></div>
@@ -151,6 +165,7 @@
             const flash = document.getElementById('flash');
             const cameraError = document.getElementById('cameraError');
             const statusMessage = document.getElementById('statusMessage');
+            const switchCameraBtn = document.getElementById('switchCameraBtn');
             
             // Variables
             let stream = null;
@@ -159,27 +174,69 @@
             let capturedPhotos = [];
             let isCapturing = false;
             const photoCount = 3;
+            let currentFacingMode = 'user'; // Start with front camera
             
             // Initialize camera with better error handling
-            async function initCamera() {
+            async function initCamera(facingMode = 'user') {
+                // Stop any existing stream
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                
                 try {
                     statusMessage.textContent = "Requesting camera access...";
+                    currentFacingMode = facingMode;
                     
                     stream = await navigator.mediaDevices.getUserMedia({ 
-                        video: true, 
+                        video: { 
+                            facingMode: facingMode,
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        }, 
                         audio: false 
                     });
                     
                     video.srcObject = stream;
                     startBtn.disabled = false;
-                    statusMessage.textContent = "Camera ready! Click 'Start Photobooth' to begin.";
+                    statusMessage.textContent = `Camera ready (${facingMode === 'user' ? 'front' : 'back'})! Click 'Start Photobooth' to begin.`;
                     cameraError.classList.add('hidden');
+                    switchCameraBtn.disabled = false;
                     
                 } catch (err) {
                     console.error('Camera error:', err);
                     cameraError.classList.remove('hidden');
-                    statusMessage.textContent = "Camera access denied or not available.";
-                    startBtn.disabled = true;
+                    statusMessage.textContent = `Error accessing ${facingMode === 'user' ? 'front' : 'back'} camera.`;
+                    
+                    // If one camera fails, try the other one
+                    if (facingMode === 'user') {
+                        statusMessage.textContent = "Front camera not available. Trying back camera...";
+                        setTimeout(() => {
+                            initCamera('environment');
+                        }, 1000);
+                    } else if (facingMode === 'environment') {
+                        statusMessage.textContent = "Back camera not available. Trying front camera...";
+                        setTimeout(() => {
+                            initCamera('user');
+                        }, 1000);
+                    } else {
+                        startBtn.disabled = true;
+                        switchCameraBtn.disabled = true;
+                    }
+                }
+            }
+            
+            // Switch camera function
+            async function switchCamera() {
+                const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+                switchCameraBtn.disabled = true;
+                statusMessage.textContent = `Switching to ${newFacingMode === 'user' ? 'front' : 'back'} camera...`;
+                
+                try {
+                    await initCamera(newFacingMode);
+                } catch (err) {
+                    console.error('Error switching camera:', err);
+                    statusMessage.textContent = `Failed to switch camera. Using ${currentFacingMode === 'user' ? 'front' : 'back'} camera.`;
+                    switchCameraBtn.disabled = false;
                 }
             }
             
@@ -262,6 +319,7 @@
                 try {
                     isCapturing = true;
                     startBtn.disabled = true;
+                    switchCameraBtn.disabled = true;
                     statusMessage.textContent = "Starting photobooth...";
                     
                     createPhotoSlots();
@@ -279,10 +337,12 @@
                     
                     resetBtn.disabled = false;
                     downloadBtn.disabled = false;
+                    switchCameraBtn.disabled = false;
                     statusMessage.textContent = "All photos taken! You can download your photostrip.";
                 } catch (err) {
                     console.error('Photobooth error:', err);
                     statusMessage.textContent = "An error occurred. Please try again.";
+                    switchCameraBtn.disabled = false;
                 } finally {
                     isCapturing = false;
                 }
@@ -410,18 +470,21 @@
             startBtn.addEventListener('click', startPhotobooth);
             resetBtn.addEventListener('click', resetPhotobooth);
             downloadBtn.addEventListener('click', downloadPhotostrip);
+            switchCameraBtn.addEventListener('click', switchCamera);
             
             // Initialize
             createPhotoSlots();
-            initCamera();
             
             // Check if getUserMedia is supported
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 cameraError.classList.remove('hidden');
                 statusMessage.textContent = "Camera not supported in this browser.";
                 startBtn.disabled = true;
+                switchCameraBtn.disabled = true;
+            } else {
+                initCamera('user'); // Start with front camera by default
             }
         });
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9649cbc1e2394ee0',t:'MTc1MzQyNjk5MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'964a0e0623444ee5',t:'MTc1MzQyOTcwNS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
